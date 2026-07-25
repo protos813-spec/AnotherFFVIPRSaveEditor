@@ -48,6 +48,16 @@ public class Character
         set => Node["magicStoneId"] = value;
     }
 
+    // Level and experience must stay consistent: the game recalculates level from
+    // currentExp after every battle, so a level written on its own is discarded (and the
+    // player sees a spurious "Level Up" as it resets). Always set both together.
+    public void SetLevel(int level)
+    {
+        level = Math.Clamp(level, Data.LevelGrowth.MinLevel, Data.LevelGrowth.MaxLevel);
+        Stats.AdditionalLevel = level;
+        CurrentExp = Data.LevelGrowth.ExpForLevel(level);
+    }
+
     internal void Commit()
     {
         Stats.Commit();

@@ -44,6 +44,13 @@ public class MainForm : Form
         Anchor = AnchorStyles.Left | AnchorStyles.Right,
         Margin = new Padding(6),
     };
+    private readonly Label _expLabel = new()
+    {
+        AutoSize = true,
+        MaximumSize = new Size(680, 0),
+        ForeColor = SystemColors.GrayText,
+        Margin = new Padding(4, 0, 4, 10),
+    };
     private readonly Label _veldtCountLabel = new()
     {
         AutoSize = true,
@@ -210,8 +217,10 @@ public class MainForm : Form
             ("+ Max HP",    "AdditionalMaxHp", 0, 99999, "Bonus added to base Max HP. Total Max HP = base (from level) + this. Level-based base isn't shown here yet."),
             ("Current MP",  "CurrentMp",       0, 99999, "Current MP. Party members are capped at 999 in-game. Will be clamped to Max MP on load."),
             ("+ Max MP",    "AdditionalMaxMp", 0,  9999, "Bonus added to base Max MP. Total Max MP = base (from level) + this. Level-based base isn't shown here yet."),
-            ("+ Level",     "AdditionalLevel", 0,    99, "Bonus level added on top of the base. Levels factor into damage and level-dependent spells (Lv.5 Death, Lv.4 Flare, etc.)."),
+            ("Level",       "AdditionalLevel", 1,    99, "Character level. Changing this also sets the character's experience to the total required for that level, because the game recalculates level from experience after every battle. Max HP and MP are derived from level, so they follow automatically. The other stats do not grow with level in FFVI: they only change through equipment and espers."),
         ]));
+
+        stack.Controls.Add(_expLabel);
 
         stack.Controls.Add(BuildTotalStatGroup("Core Stats (edit Total)",
         [
@@ -343,6 +352,16 @@ public class MainForm : Form
         box.ValueChanged += (_, _) =>
         {
             if (_suppressEvents || _selectedCharacter is null) return;
+
+            // Level goes through SetLevel so experience is kept in step. Written on its own
+            // the level is discarded (with a spurious "Level Up") at the next battle.
+            if (propName == nameof(CharacterStats.AdditionalLevel))
+            {
+                _selectedCharacter.SetLevel((int)box.Value);
+                RefreshExpLabel();
+                return;
+            }
+
             var prop = typeof(CharacterStats).GetProperty(propName);
             prop?.SetValue(_selectedCharacter.Stats, (int)box.Value);
         };
@@ -694,6 +713,19 @@ public class MainForm : Form
 
     private Character? GetSkillOwner(int characterId) =>
         _save?.UserData.Characters.FirstOrDefault(c => c.Id == characterId);
+
+    private void RefreshExpLabel()
+    {
+        if (_selectedCharacter is null) { _expLabel.Text = ""; return; }
+        var exp = _selectedCharacter.CurrentExp;
+        var lvl = _selectedCharacter.Stats.AdditionalLevel;
+        var implied = LevelGrowth.LevelForExp(exp);
+        var warn = implied == lvl
+            ? ""
+            : $"   Warning: this experience total corresponds to level {implied}, so the game will reset the level after the next battle.";
+        _expLabel.Text = $"Experience: {exp:N0} (level {lvl} requires {LevelGrowth.ExpForLevel(lvl):N0}).{warn}";
+        _expLabel.ForeColor = implied == lvl ? SystemColors.GrayText : Color.Firebrick;
+    }
 
     // Saves store the localised (and player-editable) name. Show it as-is, appending the
     // canonical English name when it differs so non-English saves can still be matched
@@ -1260,6 +1292,7 @@ public class MainForm : Form
         for (var i = 0; i < _spellList.Items.Count; i++)
             _spellList.SetItemChecked(i, learned.Contains(Spells.All[i].Id));
         _suppressEvents = false;
+        RefreshExpLabel();
         RefreshEquipment();
         RefreshEspers();
         RefreshCommands();
