@@ -48,18 +48,79 @@ public class CharacterAbilities
         }.ToJsonString(SaveFile.JsonOpts)));
     }
 
-    public void ForgetSkill(int abilityId)
+    public void ForgetSkill(int abilityId) => ForgetEverywhere(abilityId);
+
+    // Clears every record of an ability the character owns.
+    //
+    // Setting skillLevel to 0 in abilityList is NOT enough on its own: the game also keeps
+    // learned abilities in abilityDictionary (and their contentIds in the ownership order
+    // lists), and it appears to merge those in rather than rebuild them, so a skill cleared
+    // only in abilityList stays visible in the in-game menu. Rages were reported this way:
+    // ticking a box added the rage, unticking it left the rage in Gau's list.
+    //
+    // The dictionary is scrubbed across ALL categories rather than one known key, because
+    // the category ids are not documented and differ per ability type.
+    public void ForgetEverywhere(int abilityId)
     {
+        var contentId = -1;
+
         var target = _abilityListNode["target"]!.AsArray();
         for (var i = 0; i < target.Count; i++)
         {
             var ab = JsonNode.Parse(target[i]!.GetValue<string>())!.AsObject();
-            if (ab["abilityId"]?.GetValue<int>() == abilityId)
+            if (ab["abilityId"]?.GetValue<int>() != abilityId) continue;
+            contentId = ab["contentId"]?.GetValue<int>() ?? -1;
+            ab["skillLevel"] = 0;
+            target[i] = JsonValue.Create(ab.ToJsonString(SaveFile.JsonOpts));
+            break;
+        }
+
+        RemoveFromAllDictionaryCategories(abilityId);
+        if (contentId < 0) contentId = abilityId + ContentIdOffset;
+        RemoveFromOwnershipOrder(contentId);
+    }
+
+    private void RemoveFromAllDictionaryCategories(int abilityId)
+    {
+        var keys = _abilityDictNode["keys"]!.AsArray();
+        var values = _abilityDictNode["values"]!.AsArray();
+        for (var i = 0; i < keys.Count; i++)
+        {
+            var catObj = JsonNode.Parse(values[i]!.GetValue<string>())!.AsObject();
+            var catTarget = catObj["target"]?.AsArray();
+            if (catTarget is null) continue;
+
+            var removed = false;
+            for (var j = catTarget.Count - 1; j >= 0; j--)
             {
-                ab["skillLevel"] = 0;
-                target[i] = JsonValue.Create(ab.ToJsonString(SaveFile.JsonOpts));
-                return;
+                var ab = JsonNode.Parse(catTarget[j]!.GetValue<string>())!.AsObject();
+                if (ab["abilityId"]?.GetValue<int>() != abilityId) continue;
+                catTarget.RemoveAt(j);
+                removed = true;
             }
+            if (removed) values[i] = JsonValue.Create(catObj.ToJsonString(SaveFile.JsonOpts));
+        }
+    }
+
+    // additionOrderOwnedAbilityIds and sortOrderOwnedAbilityIds hold contentIds (ability id
+    // plus offset) of the abilities the character owns, in acquisition and sort order.
+    private void RemoveFromOwnershipOrder(int contentId)
+    {
+        foreach (var key in new[] { "additionOrderOwnedAbilityIds", "sortOrderOwnedAbilityIds" })
+        {
+            if (!_characterNode.ContainsKey(key)) continue;
+            var node = NestedJson.Unwrap(_characterNode, key).AsObject();
+            var list = node["target"]?.AsArray();
+            if (list is null) continue;
+
+            var removed = false;
+            for (var i = list.Count - 1; i >= 0; i--)
+            {
+                if (list[i]?.GetValue<int>() != contentId) continue;
+                list.RemoveAt(i);
+                removed = true;
+            }
+            if (removed) NestedJson.Rewrap(_characterNode, key, node);
         }
     }
 
@@ -132,32 +193,9 @@ public class CharacterAbilities
         }
     }
 
-    public void ForgetAbility(int abilityId, int categoryKey)
-    {
-        var target = _abilityListNode["target"]!.AsArray();
-        for (var i = 0; i < target.Count; i++)
-        {
-            var ab = JsonNode.Parse(target[i]!.GetValue<string>())!.AsObject();
-            if (ab["abilityId"]?.GetValue<int>() == abilityId)
-            {
-                ab["skillLevel"] = 0;
-                target[i] = JsonValue.Create(ab.ToJsonString(SaveFile.JsonOpts));
-                break;
-            }
-        }
-
-        var (catIdx, catObj) = GetCategoryObj(categoryKey);
-        if (catIdx == -1 || catObj is null) return;
-        var catTarget = catObj["target"]!.AsArray();
-        for (var i = catTarget.Count - 1; i >= 0; i--)
-        {
-            var ab = JsonNode.Parse(catTarget[i]!.GetValue<string>())!.AsObject();
-            if (ab["abilityId"]?.GetValue<int>() == abilityId)
-                catTarget.RemoveAt(i);
-        }
-        var values = _abilityDictNode["values"]!.AsArray();
-        values[catIdx] = JsonValue.Create(catObj.ToJsonString(SaveFile.JsonOpts));
-    }
+    // categoryKey is no longer needed: ForgetEverywhere scrubs all categories, which also
+    // covers abilities recorded under an unexpected one. Kept for call-site compatibility.
+    public void ForgetAbility(int abilityId, int categoryKey) => ForgetEverywhere(abilityId);
 
     public void LearnSpell(int spellId) => LearnAbility(spellId, MagicCategoryKey);
     public void ForgetSpell(int spellId) => ForgetAbility(spellId, MagicCategoryKey);
