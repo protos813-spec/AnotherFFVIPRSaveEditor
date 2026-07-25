@@ -144,25 +144,25 @@ public class MainForm : Form
 
         _skillsSubTabs.AddTab("Rages", BuildSkillTab(new SkillTabState
         {
-            Name = "Rages", OwnerCharacterName = "Gau",
+            Name = "Rages", OwnerCharacterId = CharacterRoster.GauId,
             FirstId = Rages.FirstId, LastId = Rages.LastId, Offset = Rages.ContentIdOffset,
             Items = Rages.All.Select(r => (r.Id, r.Name)).ToList(),
         }));
         _skillsSubTabs.AddTab("Bushido", BuildSkillTab(new SkillTabState
         {
-            Name = "Bushido", OwnerCharacterName = "Cyan",
+            Name = "Bushido", OwnerCharacterId = CharacterRoster.CyanId,
             FirstId = Bushido.FirstId, LastId = Bushido.LastId, Offset = Bushido.ContentIdOffset,
             Items = Bushido.All.Select(b => (b.Id, b.Name)).ToList(),
         }));
         _skillsSubTabs.AddTab("Lore", BuildSkillTab(new SkillTabState
         {
-            Name = "Lore", OwnerCharacterName = "Strago",
+            Name = "Lore", OwnerCharacterId = CharacterRoster.StragoId,
             FirstId = Lores.FirstId, LastId = Lores.LastId, Offset = Lores.ContentIdOffset,
             Items = Lores.All.Select(l => (l.Id, l.Name)).ToList(),
         }));
         _skillsSubTabs.AddTab("Blitz", BuildSkillTab(new SkillTabState
         {
-            Name = "Blitz", OwnerCharacterName = "Sabin",
+            Name = "Blitz", OwnerCharacterId = CharacterRoster.SabinId,
             FirstId = Blitzes.FirstId, LastId = Blitzes.LastId, Offset = Blitzes.ContentIdOffset,
             Items = Blitzes.All.Select(b => (b.Id, b.Name)).ToList(),
         }));
@@ -317,7 +317,7 @@ public class MainForm : Form
         totalBox.ValueChanged += (_, _) =>
         {
             if (_suppressEvents || _selectedCharacter is null) return;
-            var bs = CharacterBaseStats.For(_selectedCharacter.Name);
+            var bs = CharacterBaseStats.ForId(_selectedCharacter.Id);
             var baseVal = bs is null ? 0 : baseFn(bs);
             var total = (int)totalBox.Value;
             var prop = typeof(CharacterStats).GetProperty(propName);
@@ -639,7 +639,10 @@ public class MainForm : Form
     private class SkillTabState
     {
         public string Name { get; init; } = "";
-        public string OwnerCharacterName { get; init; } = "";
+        // Owner is identified by save character id, not name: names are localised and
+        // player-editable, so string matching fails on non-English saves.
+        public int OwnerCharacterId { get; init; }
+        public string OwnerEnglishName => CharacterRoster.EnglishNameFor(OwnerCharacterId);
         public int FirstId { get; init; }
         public int LastId { get; init; }
         public int Offset { get; init; }
@@ -689,12 +692,21 @@ public class MainForm : Form
         return page;
     }
 
-    private Character? GetSkillOwner(string name) =>
-        _save?.UserData.Characters.FirstOrDefault(c => c.Name == name);
+    private Character? GetSkillOwner(int characterId) =>
+        _save?.UserData.Characters.FirstOrDefault(c => c.Id == characterId);
+
+    // Saves store the localised (and player-editable) name. Show it as-is, appending the
+    // canonical English name when it differs so non-English saves can still be matched
+    // against this editor's English labels.
+    private static string DisplayName(Character c)
+    {
+        var canonical = CharacterRoster.ForId(c.Id)?.EnglishName;
+        return canonical is null || canonical == c.Name ? c.Name : $"{c.Name} ({canonical})";
+    }
 
     private void SetAllSkill(SkillTabState s, bool learned)
     {
-        var owner = GetSkillOwner(s.OwnerCharacterName);
+        var owner = GetSkillOwner(s.OwnerCharacterId);
         if (owner is null) return;
         _suppressEvents = true;
         for (var i = 0; i < s.List.Items.Count; i++)
@@ -711,7 +723,7 @@ public class MainForm : Form
     private void OnSkillItemChecked(SkillTabState s, ItemCheckEventArgs e)
     {
         if (_suppressEvents) return;
-        var owner = GetSkillOwner(s.OwnerCharacterName);
+        var owner = GetSkillOwner(s.OwnerCharacterId);
         if (owner is null) { e.NewValue = e.CurrentValue; return; }
         var id = s.Items[e.Index].Id;
         if (e.NewValue == CheckState.Checked) owner.Abilities.LearnSkill(id, s.Offset);
@@ -720,11 +732,11 @@ public class MainForm : Form
 
     private void RefreshSkill(SkillTabState s)
     {
-        var owner = GetSkillOwner(s.OwnerCharacterName);
+        var owner = GetSkillOwner(s.OwnerCharacterId);
         _suppressEvents = true;
         if (owner is null)
         {
-            s.Header.Text = $"{s.Name} is {s.OwnerCharacterName}'s skill. {s.OwnerCharacterName} isn't in this save yet.";
+            s.Header.Text = $"{s.Name} is {s.OwnerEnglishName}'s skill. {s.OwnerEnglishName} isn't in this save yet.";
             s.List.Enabled = false;
             for (var i = 0; i < s.List.Items.Count; i++) s.List.SetItemChecked(i, false);
         }
@@ -735,7 +747,7 @@ public class MainForm : Form
                 owner.Abilities.LearnedSkillsInRange(s.FirstId, s.LastId).Select(a => a.AbilityId));
             for (var i = 0; i < s.List.Items.Count; i++)
                 s.List.SetItemChecked(i, learned.Contains(s.Items[i].Id));
-            s.Header.Text = $"{owner.Name}'s {s.Name}: {learned.Count} / {s.Items.Count} learned.";
+            s.Header.Text = $"{DisplayName(owner)}'s {s.Name}: {learned.Count} / {s.Items.Count} learned.";
         }
         _suppressEvents = false;
     }
@@ -1205,7 +1217,7 @@ public class MainForm : Form
 
         _characterList.Items.Clear();
         foreach (var c in _save.UserData.Characters)
-            _characterList.Items.Add($"{c.Id,2}  {c.Name}");
+            _characterList.Items.Add($"{c.Id,2}  {DisplayName(c)}");
         if (_characterList.Items.Count > 0) _characterList.SelectedIndex = 0;
         _suppressEvents = false;
         RefreshInventoryGrid();
@@ -1230,7 +1242,7 @@ public class MainForm : Form
             kv.Value.Value = Math.Clamp(value, (int)kv.Value.Minimum, (int)kv.Value.Maximum);
         }
 
-        var bs = CharacterBaseStats.For(_selectedCharacter.Name);
+        var bs = CharacterBaseStats.ForId(_selectedCharacter.Id);
         foreach (var (propName, (baseLbl, totalBox, baseFn)) in _totalStats)
         {
             var baseVal = bs is null ? 0 : baseFn(bs);

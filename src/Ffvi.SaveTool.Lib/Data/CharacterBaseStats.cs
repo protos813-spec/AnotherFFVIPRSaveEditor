@@ -39,6 +39,12 @@ public static class CharacterBaseStats
         ["Leo"]    = new(50, 10, 52, 38, 41, 36, 60, 63, 22, 41, 21, 3),
     };
 
-    public static RawStats? For(string characterName) =>
-        ByName.TryGetValue(characterName, out var s) ? s : null;
+    // Look up by the save's character id, NOT by its `name` field: `name` is localised
+    // (Chinese, Japanese, and so on) and is also editable by the player in-game, so it
+    // cannot be matched against these English keys. See CharacterRoster.
+    public static RawStats? ForId(int characterId)
+    {
+        var entry = CharacterRoster.ForId(characterId);
+        return entry is not null && ByName.TryGetValue(entry.EnglishName, out var s) ? s : null;
+    }
 }

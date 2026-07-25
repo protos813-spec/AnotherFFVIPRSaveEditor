@@ -1,34 +1,47 @@
 using Ffvi.SaveTool;
+using Ffvi.SaveTool.Data;
 
-// Final verification: no-op rewrite of File 1 with the padding fix. Confirms the output
-// envelope now matches the game's own framing (padded base64 + BOM + CRLF) and that the
-// rewritten base64 length is valid (divisible by 4).
+// Validates CharacterRoster (id -> canonical English name) against every character in
+// every local save, and reports which skill owners resolve by id.
 
 var savesDir = SaveFile.DefaultSaveDirectory();
-string? targetPath = null;
+var seen = new SortedDictionary<int, (string SaveName, string Roster, int JobId, bool BaseStats)>();
+
 foreach (var f in Directory.GetFiles(savesDir).Where(f => new FileInfo(f).Length > 30000 && !f.EndsWith(".backup")))
 {
-    if (SaveFile.Load(f).SlotId == 1) { targetPath = f; break; }
+    SaveFile save;
+    try { save = SaveFile.Load(f); } catch { continue; }
+    foreach (var c in save.UserData.Characters)
+    {
+        var entry = CharacterRoster.ForId(c.Id);
+        seen[c.Id] = (c.Name, entry?.EnglishName ?? "(not in roster)", c.JobId,
+                      CharacterBaseStats.ForId(c.Id) is not null);
+    }
 }
-if (targetPath is null) { Console.WriteLine("slot id=1 not found"); return 1; }
-var backupPath = targetPath + ".backup";
 
-File.Copy(backupPath, targetPath, overwrite: true);
-var originalJson = SaveCrypto.Decrypt(File.ReadAllBytes(targetPath));
+Console.WriteLine($"{"id",3}  {"save name",-12} {"roster name",-14} {"jobId",5}  base stats  match");
+Console.WriteLine(new string('-', 66));
+var mismatches = 0;
+foreach (var (id, v) in seen)
+{
+    var rosterJob = CharacterRoster.ForId(id)?.JobId;
+    var nameOk = v.Roster == v.SaveName;
+    var jobOk = rosterJob is null || rosterJob == v.JobId;
+    if (!nameOk || !jobOk) mismatches++;
+    var flag = (nameOk ? "" : " NAME-DIFF") + (jobOk ? "" : $" JOB-DIFF(roster={rosterJob})");
+    if (flag.Length == 0) flag = " ok";
+    Console.WriteLine($"{id,3}  {v.SaveName,-12} {v.Roster,-14} {v.JobId,5}  {(v.BaseStats ? "yes" : "no ")}        {flag}");
+}
 
-var save = SaveFile.Load(targetPath);
-save.Save();
-
-var bytes = File.ReadAllBytes(targetPath);
-var rewrittenJson = SaveCrypto.Decrypt(bytes);
-Console.WriteLine($"JSON identical: {originalJson == rewrittenJson}");
-
-// Validate envelope: BOM + base64 (length % 4 == 0) + CRLF
-var hasBom = bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-var hasCrlf = bytes[^2] == 0x0D && bytes[^1] == 0x0A;
-var b64Len = bytes.Length - 3 - 2;
-Console.WriteLine($"BOM: {hasBom}  CRLF: {hasCrlf}  base64 length: {b64Len} (mod 4 = {b64Len % 4})");
-Console.WriteLine($"tail: ...{System.Text.Encoding.ASCII.GetString(bytes[^10..^2])}\\r\\n");
-Console.WriteLine();
-Console.WriteLine("Load the entry stamped 10/06/2026 22:43 in-game. This is the definitive writer test.");
+Console.WriteLine($"\nmismatches: {mismatches}");
+Console.WriteLine("\nSkill owner resolution in these saves:");
+foreach (var (label, id) in new[]
+{
+    ("Rages/Gau", CharacterRoster.GauId), ("Bushido/Cyan", CharacterRoster.CyanId),
+    ("Lore/Strago", CharacterRoster.StragoId), ("Blitz/Sabin", CharacterRoster.SabinId),
+})
+{
+    var present = seen.ContainsKey(id);
+    Console.WriteLine($"  {label,-14} id={id,2}  {(present ? $"present as '{seen[id].SaveName}'" : "not in these saves")}");
+}
 return 0;
