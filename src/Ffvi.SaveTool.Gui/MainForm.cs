@@ -90,12 +90,13 @@ public class MainForm : Form
         var menu = new MenuStrip();
         var fileMenu = new ToolStripMenuItem("&File");
         var openItem = new ToolStripMenuItem("&Open...", null, (_, _) => OnOpen()) { ShortcutKeys = Keys.Control | Keys.O };
+        var openSwitchFolderItem = new ToolStripMenuItem("Open &Switch JKSV folder...", null, (_, _) => OnOpenSwitchFolder());
         var saveItem = new ToolStripMenuItem("&Save", null, (_, _) => OnSave()) { ShortcutKeys = Keys.Control | Keys.S };
         var saveAsItem = new ToolStripMenuItem("Save &As...", null, (_, _) => OnSaveAs());
         var exitItem = new ToolStripMenuItem("E&xit", null, (_, _) => Close());
         fileMenu.DropDownItems.AddRange(new ToolStripItem[]
         {
-            openItem, saveItem, saveAsItem, new ToolStripSeparator(), exitItem,
+            openItem, openSwitchFolderItem, saveItem, saveAsItem, new ToolStripSeparator(), exitItem,
         });
         menu.Items.Add(fileMenu);
         MainMenuStrip = menu;
@@ -422,11 +423,13 @@ public class MainForm : Form
         var btnPanel = new FlowLayoutPanel { Dock = DockStyle.Fill };
         var newEntryBtn = new Button { Text = "Add Item...", AutoSize = true };
         var removeBtn = new Button { Text = "Remove Selected", AutoSize = true };
-        var maxBtn = new Button { Text = "Max all to 99", AutoSize = true };
+        var addAllBtn = new Button { Text = "Add all safe items x99", AutoSize = true };
+        var maxBtn = new Button { Text = "Max owned to 99", AutoSize = true };
         newEntryBtn.Click += (_, _) => AddNewInventoryEntry();
         removeBtn.Click += (_, _) => RemoveInventoryStack();
+        addAllBtn.Click += (_, _) => AddAllSafeInventory();
         maxBtn.Click += (_, _) => MaxAllInventory();
-        btnPanel.Controls.AddRange(new Control[] { newEntryBtn, removeBtn, maxBtn });
+        btnPanel.Controls.AddRange(new Control[] { newEntryBtn, removeBtn, addAllBtn, maxBtn });
 
         var itemCol = new DataGridViewComboBoxColumn
         {
@@ -1079,6 +1082,54 @@ public class MainForm : Form
         RefreshInventoryGrid();
     }
 
+    private void AddAllSafeInventory()
+    {
+        if (_save is null) return;
+
+        var result = MessageBox.Show(this,
+            "This will add every normal consumable, scroll, tool, weapon, shield, helmet, armor and relic at 99.\n\n" +
+            "Story/key items, internal empty-slot records and known unsafe IDs are excluded.\n\n" +
+            "Make sure you have an untouched JKSV backup. Continue?",
+            "Add all safe items",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        if (result != DialogResult.Yes) return;
+
+        var safeCategories = new HashSet<ItemCategory>
+        {
+            ItemCategory.Consumable,
+            ItemCategory.Scroll,
+            ItemCategory.Tool,
+            ItemCategory.Weapon,
+            ItemCategory.Shield,
+            ItemCategory.Helmet,
+            ItemCategory.Armor,
+            ItemCategory.Relic,
+        };
+
+        var inv = _save.UserData.NormalInventory;
+        foreach (var item in Items.Normal.Where(i => safeCategories.Contains(i.Category)))
+        {
+            // These are explicitly filtered by Inventory.Commit because they are known
+            // to trigger invalid saves in the reference implementation.
+            if (item.Id is 184 or 243) continue;
+
+            var existing = inv.Stacks.FindIndex(s => s.ItemId == item.Id);
+            if (existing >= 0)
+                inv.Set(existing, item.Id, Inventory.MaxStackCount);
+            else
+                inv.Stacks.Add(new ItemStack(item.Id, Inventory.MaxStackCount));
+        }
+
+        inv.MergeDuplicates();
+        RefreshInventoryGrid();
+        MessageBox.Show(this,
+            "All safe inventory items were added at 99. Save the file to write the changes.",
+            "Inventory updated",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
     private void MaxAllInventory()
     {
         if (_save is null) return;
@@ -1160,19 +1211,25 @@ public class MainForm : Form
         }
     }
 
-    private void OnOpen()
+    private void OnOpenSwitchFolder()
     {
-        using var dlg = new OpenFileDialog
+        using var folderDlg = new FolderBrowserDialog
         {
-            Title = "Open FFVI PR save file",
-            InitialDirectory = SaveFile.DefaultSaveDirectory(),
-            Filter = "All files|*",
+            Description = "Choose the JKSV backup folder containing the hashed FFVI save files",
+            UseDescriptionForTitle = true,
         };
-        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        if (folderDlg.ShowDialog(this) != DialogResult.OK) return;
 
+        using var slotDlg = new SwitchFolderDialog(folderDlg.SelectedPath);
+        if (slotDlg.ShowDialog(this) != DialogResult.OK || slotDlg.SelectedPath is null) return;
+        LoadSave(slotDlg.SelectedPath);
+    }
+
+    private void LoadSave(string path)
+    {
         try
         {
-            _save = SaveFile.Load(dlg.FileName);
+            _save = SaveFile.Load(path);
             if (!_save.IsSlotFile())
             {
                 MessageBox.Show(this, "This file isn't a character save slot (no character data). Try a larger file in the same folder.", "Not a slot save", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1183,12 +1240,26 @@ public class MainForm : Form
             }
             PopulateUi();
             SetEnabled(true);
-            _statusLabel.Text = $"Loaded: {Path.GetFileName(dlg.FileName)}  |  slot id={_save.SlotId}  |  {_save.UserData.Characters.Count} characters";
+            var format = _save.ContainerFormat == SaveContainerFormat.SwitchRaw ? "Switch raw" : "PC Base64";
+            _statusLabel.Text = $"Loaded: {Path.GetFileName(path)}  |  slot id={_save.SlotId}  |  {format}  |  {_save.UserData.Characters.Count} characters";
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, $"Failed to load save:\n{ex.Message}", "Load error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void OnOpen()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Open FFVI PR save file",
+            InitialDirectory = SaveFile.DefaultSaveDirectory(),
+            Filter = "All files|*",
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        LoadSave(dlg.FileName);
     }
 
     // NumericUpDown.ValueChanged does NOT fire while the user is typing — only on arrow

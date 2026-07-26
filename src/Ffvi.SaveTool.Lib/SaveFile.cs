@@ -19,14 +19,16 @@ public class SaveFile
     public UserData UserData { get; }
     public JsonObject? MapData { get; }
     public VeldtEncounters? Veldt { get; }
+    public SaveContainerFormat ContainerFormat { get; }
 
-    private SaveFile(string path, JsonObject top, UserData userData, JsonObject? mapData, VeldtEncounters? veldt)
+    private SaveFile(string path, JsonObject top, UserData userData, JsonObject? mapData, VeldtEncounters? veldt, SaveContainerFormat containerFormat)
     {
         Path = path;
         Top = top;
         UserData = userData;
         MapData = mapData;
         Veldt = veldt;
+        ContainerFormat = containerFormat;
     }
 
     public int SlotId => Top["id"]?.GetValue<int>() ?? -1;
@@ -35,7 +37,9 @@ public class SaveFile
 
     public static SaveFile Load(string path)
     {
-        var json = SaveCrypto.Decrypt(File.ReadAllBytes(path));
+        var fileBytes = File.ReadAllBytes(path);
+        var containerFormat = SaveCrypto.DetectFormat(fileBytes);
+        var json = SaveCrypto.Decrypt(fileBytes);
         var top = JsonNode.Parse(json)!.AsObject();
         var userDataNode = NestedJson.Unwrap(top, "userData").AsObject();
         var userData = new UserData(userDataNode);
@@ -48,7 +52,7 @@ public class SaveFile
             veldt = new VeldtEncounters(mapData);
         }
 
-        return new SaveFile(path, top, userData, mapData, veldt);
+        return new SaveFile(path, top, userData, mapData, veldt, containerFormat);
     }
 
     public bool IsSlotFile() => Top.ContainsKey("id") && Top.ContainsKey("pictureData");
@@ -67,12 +71,17 @@ public class SaveFile
         }
 
         var json = Top.ToJsonString(JsonOpts);
-        var encrypted = SaveCrypto.Encrypt(json);
+        var encrypted = SaveCrypto.Encrypt(json, ContainerFormat);
+        if (ContainerFormat == SaveContainerFormat.SwitchRaw)
+        {
+            File.WriteAllBytes(outputPath, encrypted);
+            return;
+        }
+
         var framed = new byte[Bom.Length + encrypted.Length + Crlf.Length];
         Buffer.BlockCopy(Bom, 0, framed, 0, Bom.Length);
         Buffer.BlockCopy(encrypted, 0, framed, Bom.Length, encrypted.Length);
         Buffer.BlockCopy(Crlf, 0, framed, Bom.Length + encrypted.Length, Crlf.Length);
-
         File.WriteAllBytes(outputPath, framed);
     }
 

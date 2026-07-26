@@ -6,6 +6,12 @@ using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Ffvi.SaveTool;
 
+public enum SaveContainerFormat
+{
+    PcBase64,
+    SwitchRaw,
+}
+
 public static class SaveCrypto
 {
     private static readonly byte[] Key =
@@ -22,18 +28,38 @@ public static class SaveCrypto
 
     private const int BlockSize = 32;
 
-    public static string Decrypt(byte[] fileBytes)
+    public static SaveContainerFormat DetectFormat(byte[] fileBytes)
     {
         var stripped = StripBom(fileBytes);
-        var b64Padded = AddBase64Padding(Encoding.ASCII.GetString(stripped).Trim());
-        var cipher = Convert.FromBase64String(b64Padded);
+        if (stripped.Length == 0) return SaveContainerFormat.PcBase64;
+
+        // PC/Steam files are printable Base64 text. Switch files are the raw
+        // Rijndael ciphertext and normally contain non-text bytes.
+        foreach (var b in stripped)
+        {
+            if (b is 0x0D or 0x0A or 0x09) continue;
+            var isB64 = b is >= (byte)'A' and <= (byte)'Z'
+                or >= (byte)'a' and <= (byte)'z'
+                or >= (byte)'0' and <= (byte)'9'
+                or (byte)'+' or (byte)'/' or (byte)'=';
+            if (!isB64) return SaveContainerFormat.SwitchRaw;
+        }
+        return SaveContainerFormat.PcBase64;
+    }
+
+    public static string Decrypt(byte[] fileBytes)
+    {
+        var format = DetectFormat(fileBytes);
+        var cipher = format == SaveContainerFormat.SwitchRaw
+            ? fileBytes
+            : Convert.FromBase64String(AddBase64Padding(Encoding.ASCII.GetString(StripBom(fileBytes)).Trim()));
         var padded = RijndaelTransform(cipher, encrypt: false);
         var compressed = StripZeroPadding(padded);
         var json = DeflateDecompress(compressed);
         return Encoding.UTF8.GetString(json);
     }
 
-    public static byte[] Encrypt(string json)
+    public static byte[] Encrypt(string json, SaveContainerFormat format = SaveContainerFormat.PcBase64)
     {
         var jsonBytes = Encoding.UTF8.GetBytes(json);
         var compressed = DeflateCompress(jsonBytes);
@@ -44,6 +70,9 @@ public static class SaveCrypto
         // unpadded input. The original reference file used to derive this framing happened to
         // be a length needing no padding, which made TrimEnd('=') look correct — in reality it
         // corrupted every write whose ciphertext length wasn't a multiple of 3.
+        if (format == SaveContainerFormat.SwitchRaw)
+            return cipher;
+
         var b64 = Convert.ToBase64String(cipher);
         return Encoding.ASCII.GetBytes(b64);
     }
