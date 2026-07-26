@@ -1,150 +1,223 @@
 # FFVI Pixel Remaster Save Editor
 
-A save editor for Final Fantasy VI Pixel Remaster (Steam), written in C# / WinForms.
+A Windows save editor for **Final Fantasy VI Pixel Remaster**, written in C# and WinForms.
 
-## Why this exists
+This fork adds native Nintendo Switch save support alongside the existing Steam/Windows support, together with inventory improvements and save-format fixes.
 
-The main community save editor for FFVI Pixel Remaster was [KiameV/final-fantasy-vi-save-editor](https://github.com/KiameV/final-fantasy-vi-save-editor), which the author archived in July 2025. As far as I could find, there is no actively maintained replacement. This project fills that gap by reimplementing the save format pipeline in C# and providing a Windows GUI for editing every commonly modified field.
+## About this fork
+
+This fork is maintained by **Nova_Megami2113** (`protos813-spec`).
+
+Changes added in this version include:
+
+- Native Nintendo Switch save support
+- Direct opening of extracted Switch save folders
+- Switch save-slot browser
+- Support for raw Switch saves without the Steam Base64 wrapper
+- Inventory category and mass-editing improvements
+- Additional save validation and format fixes
 
 ## Features
 
-Working:
+- Reads and writes Steam/Windows Pixel Remaster saves using Rijndael-256, custom padding, DEFLATE and Base64.
+- Reads and writes raw Nintendo Switch save files.
+- Opens extracted Nintendo Switch save folders and identifies readable save slots.
+- Displays Switch slot ID, play time, gil, timestamp and filename.
+- Edits party gil, total gil and step count.
+- Edits character level, HP, MP and stat bonuses.
+- Displays character stats using a Base + Total view.
+- Supports all 54 spells with **Learn All** and **Forget All** options.
+- Edits inventory using a 273-item lookup with item categories.
+- Adds new inventory entries, removes entries and sets item quantities to 99.
+- Edits weapons, shields, helmets, armour and relics.
+- Edits owned and equipped Espers.
 
-- Reads and writes the encrypted Pixel Remaster save format (Rijndael-256, custom padding, DEFLATE, base64, BOM).
-- Party fields: gil, total gil, step count. Total gil is auto-incremented when gil goes up, matching the game's behavior.
-- Per character stats with a Base + Total view. Edit the Total and the editor computes the bonus that goes into the save. Covers Strength, Stamina, Speed, Magic, Attack, Defense, Magic Defense, Evasion, Magic Evasion. Hit Rate, Critical Rate, Luck, Intelligence, Spirit are exposed as bonus-only (no documented base in PR).
-- Per character HP / MP / Level / Max HP+MP bonus fields.
-- Spell learning: 54-spell checkbox list per character with Learn All / Forget All. Writes both `abilityList` and `abilityDictionary` so spells appear in the in-game magic menu.
-- Inventory: 273-item lookup with categories. New Entry / Remove Selected / Max all to 99. Empty placeholder slots are rendered with descriptive labels.
-- Equipment: 6 slots per character (Weapon, Shield, Helmet, Armor, Relic 1, Relic 2) with category-filtered dropdowns. Equipping an item auto-adds it to the inventory if absent, so the game's validation pass doesn't unequip it on load. The equipment slot's `count` field is set from the actual inventory count, which the game requires for the save to be considered valid.
-- Espers: 27-esper checkbox list for ownership, plus a per-character equipped esper dropdown.
+## Not currently supported
 
-Not yet supported:
+- Party composition and corps slots
+- Story progression flags
+- Treasure flags
+- Esper spell-learning progress
+- Keywords
+- Warehouse items
 
-- Party composition / corps slots
-- Story progression flags (`scenarioFlags`, `treasure`)
-- Esper learning progress per character per spell
-- Keywords, warehouse items
+## Installation
 
-## Install
+The editor supports Windows 10 and Windows 11.
 
-Windows 10 or 11. No .NET install required, the executable is self-contained.
+The release build is self-contained, so no separate .NET installation is required.
 
 1. Download the latest `Ffvi.SaveTool-YYYYMMDD.zip` from the [Releases](../../releases) page.
-2. Unzip anywhere (Desktop, Documents, wherever).
+2. Extract the ZIP anywhere on your PC.
 3. Run `Ffvi.SaveTool.Gui.exe`.
 
-On first launch Windows SmartScreen may warn about an unrecognized app. Click "More info", then "Run anyway". The binary is unsigned, which is normal for hobby projects.
+Windows SmartScreen may display an unrecognised-app warning because the executable is unsigned. Select **More info**, followed by **Run anyway**.
 
-## Usage
+## Nintendo Switch usage
 
-1. Back up your save folder first. Copy `%USERPROFILE%\Documents\My Games\FINAL FANTASY VI PR\Steam\<steam-id>\` somewhere safe.
-2. Close the game. Running the game while editing risks file locks, autosaves overwriting your edits, and Steam Cloud syncing stale data.
-3. Recommended: turn off Steam Cloud for FFVI PR during editing. In Steam, right click the game, Properties, untick "Keep game saves in the Steam Cloud". Steam Cloud can revert your local edits at any time. Re-enable when you're done.
-4. Launch `Ffvi.SaveTool.Gui.exe`.
-5. File, Open. The dialog defaults to your save folder. Pick a slot file (the larger ones, around 60 KB or more).
-6. Pick a character from the left panel. Use the tabs to edit Stats, Spells, Equipment, Items, Espers.
-7. File, Save.
-8. Launch the game and load the slot to verify.
+Always back up your save before editing.
 
-### Identifying save files
+1. Export your Final Fantasy VI Pixel Remaster save using JKSV.
+2. Copy the exported save folder to your PC.
+3. Run `Ffvi.SaveTool.Gui.exe`.
+4. Select:
 
-Save filenames are base64-hashed and not human readable. The status bar shows `slot id=N` after opening a file. The id maps to:
+   ```text
+   File → Open Switch JKSV folder...
+   ```
 
-| `id` value | In-game slot |
+5. Select the exported save folder.
+6. Choose a slot from the save-slot browser.
+7. Make your changes.
+8. Select **File → Save**.
+9. Copy the edited save folder back to your Switch.
+10. Restore it using JKSV.
+
+The editor ignores expected Switch metadata files and attempts to identify valid character save slots automatically.
+
+## Steam/Windows usage
+
+Always back up your save folder before editing.
+
+The default Steam save location is:
+
+```text
+%USERPROFILE%\Documents\My Games\FINAL FANTASY VI PR\Steam\<steam-id>\
+```
+
+1. Close the game before editing.
+2. Consider temporarily disabling Steam Cloud to prevent it from restoring an older save.
+3. Run `Ffvi.SaveTool.Gui.exe`.
+4. Select **File → Open**.
+5. Choose a save-slot file. Slot files are generally larger than the configuration and metadata files in the same folder.
+6. Select a character and make your changes using the available tabs.
+7. Select **File → Save**.
+8. Launch the game and verify the edited slot.
+
+## Identifying Steam save files
+
+Steam save filenames are Base64-hashed and are not human-readable.
+
+After opening a file, the status bar displays its slot ID:
+
+| Slot ID | In-game slot |
 |---|---|
-| 1 to 20 | File 1 to File 20 (manual saves) |
+| 1–20 | Manual save slots 1–20 |
 | 21 | Quick Save |
 | 22 | Autosave |
 
-You can also identify files by content. Larger files (50 KB and up) with a `pictureData` field are slot saves. Small files in the same folder hold slot occupancy flags, story flags, and game configuration.
+Character save slots are generally larger than 50 KB and contain a `pictureData` field. Smaller files in the same folder contain configuration, slot occupancy and progression data.
 
 ## Safety notes
 
-- Always keep a backup. The editor does not auto-backup yet.
-- If your edited slot shows as Empty in the game's load menu, the save was rejected. Restore from backup. This usually means a field the editor doesn't yet handle was left in an inconsistent state. Open an issue with the steps you took.
+- Always retain an untouched backup.
+- Close the game before editing.
+- Steam Cloud may overwrite local changes.
+- The editor does not currently create automatic backups.
+- Restore your backup if an edited slot appears as empty or fails to load.
+- Open a GitHub issue and describe the changes you made if a repeatable problem occurs.
 
-## How the save format works
+## Save format
 
-From disk to readable JSON:
+Steam/Windows saves are decoded using the following process:
 
-```
-file bytes
-  -> strip UTF-8 BOM if present
-  -> append '=' to the base64 string until length % 4 == 0
-  -> base64 decode
-  -> Rijndael-256-CBC decrypt (hardcoded 32-byte key and 32-byte IV)
-  -> custom zero-byte unpadding (not PKCS7)
-  -> DEFLATE decompress
-  -> UTF-8 JSON
-```
-
-The JSON is deeply nested. Many fields hold escaped JSON strings rather than nested objects, so reaching a character stat traverses several string-unwrap steps:
-
-```
-top.userData (escaped string)
-  .ownedCharacterList (escaped string)
-    .target[N] (escaped string for each character)
-      .parameter (escaped string)
-        .currentHP, currentMP, addtionalMaxHp, ...
+```text
+File bytes
+  → Remove UTF-8 BOM when present
+  → Restore missing Base64 padding
+  → Base64 decode
+  → Rijndael-256-CBC decrypt
+  → Remove custom zero-byte padding
+  → DEFLATE decompress
+  → Decode UTF-8 JSON
 ```
 
-Field names in the save are preserved from the game's data model, including typos like `addtional` (instead of `additional`) and `owendGil` (instead of `ownedGil`).
+Nintendo Switch saves store the save data without the Steam Base64 wrapper and are handled separately by the editor.
 
-### Two .NET-specific gotchas
+The JSON structure contains multiple escaped JSON strings nested inside other objects:
 
-1. `RijndaelManaged` is AES-only on .NET Core and later. Setting `BlockSize = 256` compiles but throws `PlatformNotSupportedException` at runtime. The project uses [BouncyCastle](https://www.bouncycastle.org/csharp/) for the actual 256-bit block Rijndael.
-2. The default `System.Text.Json` encoder writes `"` for double quotes inside nested string values. The game's Unity-based parser rejects this and considers the save corrupted. Use `JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }` instead, which writes `\"`.
+```text
+top.userData
+  .ownedCharacterList
+    .target[N]
+      .parameter
+        .currentHP
+        .currentMP
+        .addtionalMaxHp
+```
+
+Field names are preserved from the game's data model, including misspellings such as `addtional` and `owendGil`.
+
+### .NET implementation notes
+
+`RijndaelManaged` on modern .NET versions only supports AES-compatible block sizes. This project uses BouncyCastle.NET for the game's 256-bit Rijndael block size.
+
+Nested JSON strings must also be serialised using:
+
+```csharp
+JsonSerializerOptions
+{
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+}
+```
+
+The game's parser may reject saves when nested quotation marks are escaped differently.
 
 ## Building from source
 
-You only need this section if you want to modify the code or build your own release. End users should use the prebuilt zip from the Releases page.
+End users should normally use the prebuilt release.
 
 Requirements:
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- Windows (the GUI is WinForms)
+- Windows, because the GUI uses WinForms
 
 Clone and run:
 
 ```bash
-git clone <repo-url>
-cd ffvi-editor/src/Ffvi.SaveTool.Gui
+git clone https://github.com/protos813-spec/AnotherFFVIPRSaveEditor.git
+cd AnotherFFVIPRSaveEditor/src/Ffvi.SaveTool.Gui
 dotnet run
 ```
 
-To produce a release zip (self-contained single-file exe plus README and LICENSE):
+Create a self-contained release:
 
 ```powershell
 .\build-release.ps1
 ```
 
-Output is at `publish\Ffvi.SaveTool-YYYYMMDD.zip`.
+The release ZIP is written to:
 
-### Project layout
-
+```text
+publish\Ffvi.SaveTool-YYYYMMDD.zip
 ```
-ffvi-editor/
+
+## Project layout
+
+```text
+AnotherFFVIPRSaveEditor/
   src/
-    Ffvi.SaveTool.Lib/   Class library (crypto pipeline, JSON model, edit API).
-    Ffvi.SaveTool.Gui/   WinForms editor.
-    Ffvi.SaveTool.Diag/  Small console runner used for inspecting save contents.
+    Ffvi.SaveTool.Lib/   Save format, crypto, data models and editing logic
+    Ffvi.SaveTool.Gui/   WinForms interface
+    Ffvi.SaveTool.Diag/  Diagnostic console application
     Ffvi.SaveTool.slnx
-  build-release.ps1      One-shot release build script.
+  build-release.ps1
 ```
 
 ## Credits
 
-The data tables and the Rijndael key, IV, and padding scheme were all derived from [KiameV/final-fantasy-vi-save-editor](https://github.com/KiameV/final-fantasy-vi-save-editor). Everything was reimplemented in C#, but without that prior reverse engineering this project would not exist.
+- [KiameV/final-fantasy-vi-save-editor](https://github.com/KiameV/final-fantasy-vi-save-editor) — original save-format reverse engineering, data tables, Rijndael key, IV and padding information.
+- [GiulioSamp/AnotherFFVIPRSaveEditor](https://github.com/GiulioSamp/AnotherFFVIPRSaveEditor) — original C# and WinForms implementation.
+- **Nova_Megami2113** (`protos813-spec`) — Nintendo Switch support, inventory improvements, save-format fixes and maintenance of this fork.
+- [Final Fantasy Wiki](https://finalfantasy.fandom.com/) — reference material for item, spell, Esper, character and stat metadata.
+- [BouncyCastle.NET](https://www.bouncycastle.org/csharp/) — cryptography library.
 
-Item, spell, esper, character, and stat metadata cross-referenced against the [Final Fantasy Wiki](https://finalfantasy.fandom.com/).
+## Licence
 
-Cryptography by [BouncyCastle.NET](https://www.bouncycastle.org/csharp/).
-
-## License
-
-MIT. See `LICENSE`.
+Licensed under the MIT Licence. See [`LICENSE`](LICENSE).
 
 ## Disclaimer
 
-Not affiliated with or endorsed by Square Enix. Final Fantasy VI Pixel Remaster is the property of Square Enix Holdings Co., Ltd. This editor only modifies save files on your own local disk. It does not patch, decompile, or otherwise interact with the game binary.
+This project is not affiliated with or endorsed by Square Enix.
+
+Final Fantasy VI Pixel Remaster is the property of Square Enix Holdings Co., Ltd. This editor only modifies save files supplied by the user and does not patch or modify the game executable.
