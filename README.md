@@ -32,14 +32,6 @@ Changes added in this version include:
 - Edits weapons, shields, helmets, armour and relics.
 - Edits owned and equipped Espers.
 
-## Not currently supported
-
-- Party composition and corps slots
-- Story progression flags
-- Treasure flags
-- Esper spell-learning progress
-- Keywords
-- Warehouse items
 
 ## Installation
 
