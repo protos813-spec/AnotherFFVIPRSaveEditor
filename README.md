@@ -47,7 +47,7 @@ The editor supports Windows 10 and Windows 11.
 
 The release build is self-contained, so no separate .NET installation is required.
 
-1. Download the latest `Ffvi.SaveTool-YYYYMMDD.zip` from the [Releases](../../releases) page.
+1. Download the latest build from the [Releases](../../releases) page.
 2. Extract the ZIP anywhere on your PC.
 3. Run `Ffvi.SaveTool.Gui.exe`.
 
